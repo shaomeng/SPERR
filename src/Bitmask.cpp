@@ -54,15 +54,13 @@ auto sperr::Bitmask::has_true(size_t start, size_t len) const -> int64_t
   auto nbits = std::min(size_t{64}, begin_idx + len);
   for (auto i = begin_idx; i < nbits; i++) {
     answer |= word & (uint64_t{1} << i);
-    if constexpr (Position) {
-      if (answer != 0)
+    if (answer != 0) {
+      if constexpr (Position)
         return processed_bits;
+      else
+        return 1;
     }
     processed_bits++;
-  }
-  if constexpr (!Position) {
-    if (answer != 0)
-      return 1;
   }
 
   // Examine the subsequent full longs.
@@ -93,14 +91,12 @@ auto sperr::Bitmask::has_true(size_t start, size_t len) const -> int64_t
     answer = 0;
     for (int64_t i = 0; i < nbits; i++) {
       answer |= word & (uint64_t{1} << i);
-      if constexpr (Position) {
-        if (answer != 0)
+      if (answer != 0) {
+        if constexpr (Position)
           return processed_bits + i;
+        else
+          return 1;
       }
-    }
-    if constexpr (!Position) {
-      if (answer != 0)
-        return 1;
     }
   }
 
