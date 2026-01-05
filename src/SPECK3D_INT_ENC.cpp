@@ -139,7 +139,7 @@ void sperr::SPECK3D_INT_ENC<T>::m_deposit_set(Set3D set)
 }
 
 template <typename T>
-void sperr::SPECK3D_INT_ENC<T>::m_additional_initialization()
+void sperr::SPECK3D_INT_ENC<T>::m_encoder_make_morton()
 {
   // For the encoder, this function re-organizes the coefficients in a morton order.
   //
@@ -159,6 +159,41 @@ void sperr::SPECK3D_INT_ENC<T>::m_additional_initialization()
 }
 
 template <typename T>
+void sperr::SPECK3D_INT_ENC<T>::m_encoder_make_mmask(size_t idx1, size_t idx2)
+{
+  // For the encoder only. Populates two data members: `m_mmask` and `m_mmask_offset`
+  //
+  const auto& set = m_LIS[idx1][idx2];
+  const auto len = set.num_elem();
+
+  m_mmask.resize(len);
+  m_mmask_offset = set.get_morton();
+
+  size_t processed_bits = 0;
+  while (processed_bits + 64 <= len) {
+    uint64_t word = 0;
+    for (size_t i = 0; i < 64; i++) {
+      uint64_t idx = m_mmask_offset + processed_bits + i;
+      uint64_t sig = m_morton_buf[idx] >= m_threshold;
+      word |= (sig << i);
+    }
+    m_mmask.wlong(processed_bits, word);
+    processed_bits += 64;
+  }
+
+  if (processed_bits < len) {
+    auto nbits = len - processed_bits;
+    uint64_t word = 0;
+    for (size_t i = 0; i < nbits; i++) {
+      uint64_t idx = m_mmask_offset + processed_bits + i;
+      uint64_t sig = m_morton_buf[idx] >= m_threshold;
+      word |= (sig << i);
+    }
+    m_mmask.wlong(processed_bits, word);
+  }
+}
+
+template <typename T>
 void sperr::SPECK3D_INT_ENC<T>::m_process_S(size_t idx1, size_t idx2, size_t& counter, bool output)
 {
   auto& set = m_LIS[idx1][idx2];
@@ -166,12 +201,8 @@ void sperr::SPECK3D_INT_ENC<T>::m_process_S(size_t idx1, size_t idx2, size_t& co
 
   // If need to output, it means the current set has unknown significance.
   if (output) {
-    auto first = m_morton_buf.data() + set.get_morton();
-    if (set.num_elem() < 16)
-      is_sig = std::any_of(first, first + set.num_elem(),
-                           [thld = m_threshold](auto v) { return v >= thld; });
-    else
-      is_sig = sperr::any_ge(first, set.num_elem(), m_threshold);
+    assert(set.get_morton() >= m_mmask_offset);
+    is_sig = m_mmask.has_true(set.get_morton() - m_mmask_offset, set.num_elem());
     m_bit_buffer.wbit(is_sig);
   }
 
@@ -188,8 +219,8 @@ void sperr::SPECK3D_INT_ENC<T>::m_process_P(size_t idx, size_t morton, size_t& c
   bool is_sig = true;
 
   if (output) {
-    assert(m_coeff_buf[idx] == m_morton_buf[morton]);
-    is_sig = (m_morton_buf[morton] >= m_threshold);
+    assert(morton >= m_mmask_offset);
+    is_sig = m_mmask.rbit(morton - m_mmask_offset);
     m_bit_buffer.wbit(is_sig);
   }
 

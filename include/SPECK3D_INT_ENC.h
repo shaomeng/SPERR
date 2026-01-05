@@ -34,10 +34,14 @@ class SPECK3D_INT_ENC final : public SPECK3D_INT<T> {
   void m_process_S(size_t idx1, size_t idx2, size_t& counter, bool output) final;
   void m_process_P(size_t idx, size_t morton, size_t& counter, bool output) final;
   void m_process_P_lite(size_t idx) final;
-  void m_additional_initialization() final;
+  void m_encoder_make_morton() final;
+  void m_encoder_make_mmask(size_t idx1, size_t idx2) final;
 
   // Data structures and functions for morton data layout.
+  //
   vecui_type m_morton_buf;
+  Bitmask m_mmask;            // a bitmask holding significance info of a set, in morton order
+  size_t m_mmask_offset = 0;  // offset of `m_mmask`
   void m_deposit_set(Set3D);
 };
 

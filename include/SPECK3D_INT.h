@@ -61,8 +61,9 @@ class SPECK3D_INT : public SPECK_INT<T> {
 
   virtual void m_process_S(size_t idx1, size_t idx2, size_t& counter, bool) = 0;
   virtual void m_process_P(size_t i, size_t m, size_t& c, bool) = 0;  // Called by `m_code_S()`.
-  virtual void m_process_P_lite(size_t idx) = 0;  // Called by `m_sorting_pass()` directly.
-  virtual void m_additional_initialization() {};  // empty by default
+  virtual void m_process_P_lite(size_t idx) = 0;        // Called by `m_sorting_pass()` directly.
+  virtual void m_encoder_make_morton() {};              // empty by default
+  virtual void m_encoder_make_mmask(size_t, size_t) {}; // empty by default
 
   void m_code_S(size_t idx1, size_t idx2);
   auto m_partition_S_XYZ(Set3D, uint16_t) const -> std::tuple<std::array<Set3D, 8>, uint16_t>;

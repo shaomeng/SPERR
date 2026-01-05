@@ -92,8 +92,7 @@ void sperr::SPECK3D_INT<T>::m_initialize_lists()
   // it at the front of it's corresponding vector. One-time expense.
   m_LIS[curr_lev].insert(m_LIS[curr_lev].begin(), big);
 
-  // Encoder and decoder might have different additional tasks.
-  m_additional_initialization();
+  m_encoder_make_morton(); // empty for the decider
 }
 
 template <typename T>
@@ -132,6 +131,7 @@ void sperr::SPECK3D_INT<T>::m_sorting_pass()
     auto idx1 = m_LIS.size() - tmp;
     for (size_t idx2 = 0; idx2 < m_LIS[idx1].size(); idx2++) {
       size_t dummy = 0;
+      m_encoder_make_mmask(idx1, idx2);  // empty for the decoder
       m_process_S(idx1, idx2, dummy, true);
     }
   }
