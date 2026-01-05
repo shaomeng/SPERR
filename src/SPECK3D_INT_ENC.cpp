@@ -172,9 +172,9 @@ void sperr::SPECK3D_INT_ENC<T>::m_encoder_make_mmask(size_t idx1, size_t idx2)
   size_t processed_bits = 0;
   while (processed_bits + 64 <= len) {
     uint64_t word = 0;
+    auto idx_offset = m_mmask_offset + processed_bits;
     for (size_t i = 0; i < 64; i++) {
-      uint64_t idx = m_mmask_offset + processed_bits + i;
-      uint64_t sig = m_morton_buf[idx] >= m_threshold;
+      uint64_t sig = m_morton_buf[idx_offset + i] >= m_threshold;
       word |= (sig << i);
     }
     m_mmask.wlong(processed_bits, word);
@@ -182,11 +182,11 @@ void sperr::SPECK3D_INT_ENC<T>::m_encoder_make_mmask(size_t idx1, size_t idx2)
   }
 
   if (processed_bits < len) {
-    auto nbits = len - processed_bits;
     uint64_t word = 0;
+    auto nbits = len - processed_bits;
+    auto idx_offset = m_mmask_offset + processed_bits;
     for (size_t i = 0; i < nbits; i++) {
-      uint64_t idx = m_mmask_offset + processed_bits + i;
-      uint64_t sig = m_morton_buf[idx] >= m_threshold;
+      uint64_t sig = m_morton_buf[idx_offset + i] >= m_threshold;
       word |= (sig << i);
     }
     m_mmask.wlong(processed_bits, word);
