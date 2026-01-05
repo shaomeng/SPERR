@@ -180,7 +180,7 @@ void sperr::SPECK3D_INT_ENC<T>::m_encoder_make_mmask(size_t idx1, size_t idx2)
     bool optimized = false;
 
 #ifdef __AVX2__
-    if (sizeof(T) == 1) {
+    if constexpr (sizeof(T) == 1) {
       const auto* ptr = reinterpret_cast<const uint8_t*>(&m_morton_buf[idx_offset]);
       const __m256i t = _mm256_set1_epi8(static_cast<char>(m_threshold));
       
@@ -202,7 +202,7 @@ void sperr::SPECK3D_INT_ENC<T>::m_encoder_make_mmask(size_t idx1, size_t idx2)
       word = ((uint64_t)mask1 << 32) | mask0;
       optimized = true;
     }
-    else if (sizeof(T) == 4) {
+    else if constexpr (sizeof(T) == 4) {
       const auto* ptr = reinterpret_cast<const uint8_t*>(&m_morton_buf[idx_offset]);
       const __m256i t = _mm256_set1_epi32(static_cast<int>(m_threshold));
 
@@ -215,7 +215,7 @@ void sperr::SPECK3D_INT_ENC<T>::m_encoder_make_mmask(size_t idx1, size_t idx2)
       }
       optimized = true;
     }
-    else if (sizeof(T) == 8) {
+    else if constexpr (sizeof(T) == 8) {
       const auto* ptr = reinterpret_cast<const uint8_t*>(&m_morton_buf[idx_offset]);
       // threshold is power of 2. mask = ~(threshold - 1).
       // If val >= threshold, val & mask != 0.
