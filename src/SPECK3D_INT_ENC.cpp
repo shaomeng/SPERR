@@ -5,6 +5,10 @@
 #include <cstring>  // std::memcpy()
 #include <numeric>
 
+#ifdef __AVX2__
+  #include <immintrin.h>
+#endif
+
 template <typename T>
 void sperr::SPECK3D_INT_ENC<T>::m_deposit_set(Set3D set)
 {
@@ -173,9 +177,68 @@ void sperr::SPECK3D_INT_ENC<T>::m_encoder_make_mmask(size_t idx1, size_t idx2)
   while (processed_bits + 64 <= len) {
     uint64_t word = 0;
     auto idx_offset = m_mmask_offset + processed_bits;
-    for (size_t i = 0; i < 64; i++) {
-      uint64_t sig = m_morton_buf[idx_offset + i] >= m_threshold;
-      word |= (sig << i);
+    bool optimized = false;
+
+#ifdef __AVX2__
+    if (sizeof(T) == 1) {
+      const auto* ptr = reinterpret_cast<const uint8_t*>(&m_morton_buf[idx_offset]);
+      const __m256i t = _mm256_set1_epi8(static_cast<char>(m_threshold));
+      
+      // Load 64 bytes (2 vectors)
+      __m256i v0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr));
+      __m256i v1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + 32));
+      
+      // Compare v >= t using max: (max(v, t) == v)
+      __m256i max0 = _mm256_max_epu8(v0, t);
+      __m256i cmp0 = _mm256_cmpeq_epi8(max0, v0); // 0xFF if v >= t, 0x00 else
+      
+      __m256i max1 = _mm256_max_epu8(v1, t);
+      __m256i cmp1 = _mm256_cmpeq_epi8(max1, v1);
+      
+      // Extract mask
+      uint32_t mask0 = _mm256_movemask_epi8(cmp0);
+      uint32_t mask1 = _mm256_movemask_epi8(cmp1);
+      
+      word = ((uint64_t)mask1 << 32) | mask0;
+      optimized = true;
+    }
+    else if (sizeof(T) == 4) {
+      const auto* ptr = reinterpret_cast<const uint8_t*>(&m_morton_buf[idx_offset]);
+      const __m256i t = _mm256_set1_epi32(static_cast<int>(m_threshold));
+
+      for (int k = 0; k < 8; ++k) {
+         __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + k * 32));
+         __m256i m = _mm256_max_epu32(v, t);
+         __m256i c = _mm256_cmpeq_epi32(m, v);
+         uint32_t mask = _mm256_movemask_ps(_mm256_castsi256_ps(c)); // 8 bits
+         word |= ((uint64_t)mask << (k * 8));
+      }
+      optimized = true;
+    }
+    else if (sizeof(T) == 8) {
+      const auto* ptr = reinterpret_cast<const uint8_t*>(&m_morton_buf[idx_offset]);
+      // threshold is power of 2. mask = ~(threshold - 1).
+      // If val >= threshold, val & mask != 0.
+      uint64_t thresh_mask = ~(m_threshold - 1);
+      const __m256i t_mask = _mm256_set1_epi64x(static_cast<long long>(thresh_mask));
+      const __m256i zero = _mm256_setzero_si256();
+
+      for (int k = 0; k < 16; ++k) {
+         __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + k * 32));
+         __m256i masked = _mm256_and_si256(v, t_mask);
+         __m256i c = _mm256_cmpeq_epi64(masked, zero); // -1 if zero (insig), 0 if non-zero (sig)
+         int mask = _mm256_movemask_pd(_mm256_castsi256_pd(c)); // 4 bits. 1 means insig.
+         word |= ((uint64_t)(~mask & 0xF) << (k * 4));
+      }
+      optimized = true;
+    }
+#endif
+
+    if (!optimized) {
+      for (size_t i = 0; i < 64; i++) {
+        uint64_t sig = m_morton_buf[idx_offset + i] >= m_threshold;
+        word |= (sig << i);
+      }
     }
     m_mmask.wlong(processed_bits, word);
     processed_bits += 64;
