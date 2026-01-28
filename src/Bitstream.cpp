@@ -1,5 +1,6 @@
 #include "Bitstream.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <iterator>  // std::distance()

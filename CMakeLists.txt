@@ -5,8 +5,8 @@ cmake_minimum_required(VERSION 3.14)
 project(SPERR VERSION 0.8.4 LANGUAGES CXX DESCRIPTION "Lossy Scientific Compression with SPERR")
 
 if(NOT CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD "20" CACHE STRING "Choose the C++ Standard to use." FORCE)
-    set_property(CACHE CMAKE_CXX_STANDARD PROPERTY STRINGS "20" "17")
+    set(CMAKE_CXX_STANDARD "23" CACHE STRING "Choose the C++ Standard to use." FORCE)
+    set_property(CACHE CMAKE_CXX_STANDARD PROPERTY STRINGS "23" "20" "17")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
