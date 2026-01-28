@@ -13,6 +13,7 @@
 #include "sperr_helper.h"
 
 #include <cmath>
+#include <mdspan>
 
 namespace sperr {
 
@@ -103,6 +104,17 @@ class CDF97 {
   // It is UB if `dst` does not point to a big enough space.
   auto m_sub_slice(std::array<size_t, 2> subdims) const -> vecd_type;
   void m_sub_volume(dims_type subdims, double* dst) const;
+
+  // Helper methods to create mdspan views of internal buffers
+  // Note: Data layout is index = z * (dims[0] * dims[1]) + y * dims[0] + x
+  //       So mdspan extents are (Z, Y, X) and access is [z, y, x]
+  //       where z varies slowest and x varies fastest in memory
+  auto m_data_view_3d() {
+    return std::mdspan(m_data_buf.data(), m_dims[2], m_dims[1], m_dims[0]);
+  }
+  auto m_data_view_3d() const {
+    return std::mdspan(m_data_buf.data(), m_dims[2], m_dims[1], m_dims[0]);
+  }
 
   //
   // Methods from QccPack with slight changes to combine the even and odd length cases.

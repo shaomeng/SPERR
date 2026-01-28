@@ -186,37 +186,36 @@ void sperr::CDF97::m_dwt3d_wavelet_packet()
    *       Y
    */
 
-  const size_t plane_size_xy = m_dims[0] * m_dims[1];
+  // Create 3D view of the data buffer (access pattern: [z, y, x])
+  auto data_3d = m_data_view_3d();
 
   // First transform along the Z dimension
-  //
   const auto num_xforms_z = sperr::num_of_xforms(m_dims[2]);
 
   for (size_t y = 0; y < m_dims[1]; y++) {
-    const auto y_offset = y * m_dims[0];
-
-    // Re-arrange values of one XZ slice so that they form many z_columns
-    for (size_t z = 0; z < m_dims[2]; z++) {
-      const auto cube_start_idx = z * plane_size_xy + y_offset;
-      for (size_t x = 0; x < m_dims[0]; x++)
-        m_slice_buf[z + x * m_dims[2]] = m_data_buf[cube_start_idx + x];
+    // Extract XZ slice at Y position: create columns of Z values
+    // m_slice_buf layout: [x0_z0, x0_z1, ..., x0_zN, x1_z0, x1_z1, ..., x1_zN, ...]
+    for (size_t x = 0; x < m_dims[0]; x++) {
+      for (size_t z = 0; z < m_dims[2]; z++) {
+        m_slice_buf[z + x * m_dims[2]] = data_3d[z, y, x];
+      }
     }
 
     // DWT1D on every z_column
     for (size_t x = 0; x < m_dims[0]; x++)
       m_dwt1d(m_slice_buf.data() + x * m_dims[2], m_dims[2], num_xforms_z);
 
-    // Put back values of the z_columns to the cube
-    for (size_t z = 0; z < m_dims[2]; z++) {
-      const auto cube_start_idx = z * plane_size_xy + y_offset;
-      for (size_t x = 0; x < m_dims[0]; x++)
-        m_data_buf[cube_start_idx + x] = m_slice_buf[z + x * m_dims[2]];
+    // Put back transformed z_columns to the volume
+    for (size_t x = 0; x < m_dims[0]; x++) {
+      for (size_t z = 0; z < m_dims[2]; z++) {
+        data_3d[z, y, x] = m_slice_buf[z + x * m_dims[2]];
+      }
     }
   }
 
-  // Second transform each plane
-  //
+  // Second transform each XY plane
   const auto num_xforms_xy = sperr::num_of_xforms(std::min(m_dims[0], m_dims[1]));
+  const size_t plane_size_xy = m_dims[0] * m_dims[1];
 
   for (size_t z = 0; z < m_dims[2]; z++) {
     const size_t offset = plane_size_xy * z;
@@ -228,11 +227,10 @@ void sperr::CDF97::m_idwt3d_wavelet_packet()
 {
   const size_t plane_size_xy = m_dims[0] * m_dims[1];
 
-  // First, inverse transform each plane
-  //
+  // First, inverse transform each XY plane
   auto num_xforms_xy = sperr::num_of_xforms(std::min(m_dims[0], m_dims[1]));
-  for (size_t i = 0; i < m_dims[2]; i++) {
-    const size_t offset = plane_size_xy * i;
+  for (size_t z = 0; z < m_dims[2]; z++) {
+    const size_t offset = plane_size_xy * z;
     m_idwt2d(m_data_buf.data() + offset, {m_dims[0], m_dims[1]}, num_xforms_xy);
   }
 
@@ -255,28 +253,28 @@ void sperr::CDF97::m_idwt3d_wavelet_packet()
    *       Y
    */
 
+  // Create 3D view of the data buffer (access pattern: [z, y, x])
+  auto data_3d = m_data_view_3d();
+
   // Process one XZ slice at a time
-  //
   const auto num_xforms_z = sperr::num_of_xforms(m_dims[2]);
   for (size_t y = 0; y < m_dims[1]; y++) {
-    const auto y_offset = y * m_dims[0];
-
-    // Re-arrange values on one slice so that they form many z_columns
-    for (size_t z = 0; z < m_dims[2]; z++) {
-      const auto cube_start_idx = z * plane_size_xy + y_offset;
-      for (size_t x = 0; x < m_dims[0]; x++)
-        m_slice_buf[z + x * m_dims[2]] = m_data_buf[cube_start_idx + x];
+    // Extract XZ slice at Y position: create columns of Z values
+    for (size_t x = 0; x < m_dims[0]; x++) {
+      for (size_t z = 0; z < m_dims[2]; z++) {
+        m_slice_buf[z + x * m_dims[2]] = data_3d[z, y, x];
+      }
     }
 
     // IDWT1D on every z_column
     for (size_t x = 0; x < m_dims[0]; x++)
       m_idwt1d(m_slice_buf.data() + x * m_dims[2], m_dims[2], num_xforms_z);
 
-    // Put back values from the z_columns to the cube
-    for (size_t z = 0; z < m_dims[2]; z++) {
-      const auto cube_start_idx = z * plane_size_xy + y_offset;
-      for (size_t x = 0; x < m_dims[0]; x++)
-        m_data_buf[cube_start_idx + x] = m_slice_buf[z + x * m_dims[2]];
+    // Put back transformed z_columns to the volume
+    for (size_t x = 0; x < m_dims[0]; x++) {
+      for (size_t z = 0; z < m_dims[2]; z++) {
+        data_3d[z, y, x] = m_slice_buf[z + x * m_dims[2]];
+      }
     }
   }
 }
@@ -344,9 +342,12 @@ void sperr::CDF97::m_idwt2d(double* plane, std::array<size_t, 2> len_xy, size_t 
 
 void sperr::CDF97::m_dwt2d_one_level(double* plane, std::array<size_t, 2> len_xy)
 {
+  // Create 2D view of the plane (layout: y * m_dims[0] + x, so access is [y, x])
+  auto plane_2d = std::mdspan(plane, m_dims[1], m_dims[0]);
+
   // First, perform DWT along X for every row
-  for (size_t i = 0; i < len_xy[1]; i++) {
-    auto* pos = plane + i * m_dims[0];
+  for (size_t y = 0; y < len_xy[1]; y++) {
+    auto* pos = plane + y * m_dims[0];
     m_gather(pos, len_xy[0], m_aligned_buf);
     this->QccWAVCDF97AnalysisSymmetric(m_aligned_buf, len_xy[0]);
     std::copy(m_aligned_buf, m_aligned_buf + len_xy[0], pos);
@@ -354,30 +355,43 @@ void sperr::CDF97::m_dwt2d_one_level(double* plane, std::array<size_t, 2> len_xy
 
   // Second, perform DWT along Y for every column
   for (size_t x = 0; x < len_xy[0]; x++) {
+    // Extract column into temporary buffer
     for (size_t y = 0; y < len_xy[1]; y++)
-      m_slice_buf[y] = plane[y * m_dims[0] + x];
+      m_slice_buf[y] = plane_2d[y, x];
+
+    // Transform column
     m_gather(m_slice_buf.data(), len_xy[1], m_aligned_buf);
     this->QccWAVCDF97AnalysisSymmetric(m_aligned_buf, len_xy[1]);
+
+    // Write column back
     for (size_t y = 0; y < len_xy[1]; y++)
-      plane[y * m_dims[0] + x] = m_aligned_buf[y];
+      plane_2d[y, x] = m_aligned_buf[y];
   }
 }
 
 void sperr::CDF97::m_idwt2d_one_level(double* plane, std::array<size_t, 2> len_xy)
 {
+  // Create 2D view of the plane (layout: y * m_dims[0] + x, so access is [y, x])
+  auto plane_2d = std::mdspan(plane, m_dims[1], m_dims[0]);
+
   // First, perform IDWT along Y for every column
   for (size_t x = 0; x < len_xy[0]; x++) {
+    // Extract column into temporary buffer
     for (size_t y = 0; y < len_xy[1]; y++)
-      m_slice_buf[y] = plane[y * m_dims[0] + x];
+      m_slice_buf[y] = plane_2d[y, x];
+
+    // Transform column
     this->QccWAVCDF97SynthesisSymmetric(m_slice_buf.data(), len_xy[1]);
     m_scatter(m_slice_buf.data(), len_xy[1], m_aligned_buf);
+
+    // Write column back
     for (size_t y = 0; y < len_xy[1]; y++)
-      plane[y * m_dims[0] + x] = m_aligned_buf[y];
+      plane_2d[y, x] = m_aligned_buf[y];
   }
 
   // Second, perform IDWT along X for every row
-  for (size_t i = 0; i < len_xy[1]; i++) {
-    auto* pos = plane + i * m_dims[0];
+  for (size_t y = 0; y < len_xy[1]; y++) {
+    auto* pos = plane + y * m_dims[0];
     this->QccWAVCDF97SynthesisSymmetric(pos, len_xy[0]);
     m_scatter(pos, len_xy[0], m_aligned_buf);
     std::copy(m_aligned_buf, m_aligned_buf + len_xy[0], pos);
@@ -403,16 +417,21 @@ void sperr::CDF97::m_dwt3d_one_level(std::array<size_t, 3> len_xyz)
   // is usually 64 bytes, or 8 doubles. That means when you pay the cost to retrieve
   // one value from the Z column, its neighboring 7 values are available for free!
 
+  // Create 3D view of the data buffer (access pattern: [z, y, x])
+  auto data_3d = m_data_view_3d();
+
   for (size_t y = 0; y < len_xyz[1]; y++) {
     for (size_t x = 0; x < len_xyz[0]; x += 8) {
-      const size_t xy_offset = y * m_dims[0] + x;
       const size_t stride = std::min(size_t{8}, len_xyz[0] - x);
 
-      for (size_t z = 0; z < col_len; z++) {
-        for (size_t i = 0; i < stride; i++)
-          m_slice_buf[z + i * col_len] = m_data_buf[z * plane_size_xy + xy_offset + i];
+      // Extract up to 8 adjacent Z columns to slice buffer
+      for (size_t i = 0; i < stride; i++) {
+        for (size_t z = 0; z < col_len; z++) {
+          m_slice_buf[z + i * col_len] = data_3d[z, y, x + i];
+        }
       }
 
+      // Transform each Z column
       for (size_t i = 0; i < stride; i++) {
         auto* itr = m_slice_buf.data() + i * col_len;
         m_gather(itr, col_len, m_aligned_buf);
@@ -420,9 +439,11 @@ void sperr::CDF97::m_dwt3d_one_level(std::array<size_t, 3> len_xyz)
         std::copy(m_aligned_buf, m_aligned_buf + col_len, itr);
       }
 
-      for (size_t z = 0; z < col_len; z++) {
-        for (size_t i = 0; i < stride; i++)
-          m_data_buf[z * plane_size_xy + xy_offset + i] = m_slice_buf[z + i * col_len];
+      // Put transformed Z columns back to volume
+      for (size_t i = 0; i < stride; i++) {
+        for (size_t z = 0; z < col_len; z++) {
+          data_3d[z, y, x + i] = m_slice_buf[z + i * col_len];
+        }
       }
     }
   }
@@ -442,16 +463,21 @@ void sperr::CDF97::m_idwt3d_one_level(std::array<size_t, 3> len_xyz)
   // is usually 64 bytes, or 8 doubles. That means when you pay the cost to retrieve
   // one value from the Z column, its neighboring 7 values are available for free!
 
+  // Create 3D view of the data buffer (access pattern: [z, y, x])
+  auto data_3d = m_data_view_3d();
+
   for (size_t y = 0; y < len_xyz[1]; y++) {
     for (size_t x = 0; x < len_xyz[0]; x += 8) {
-      const size_t xy_offset = y * m_dims[0] + x;
       const size_t stride = std::min(size_t{8}, len_xyz[0] - x);
 
-      for (size_t z = 0; z < col_len; z++) {
-        for (size_t i = 0; i < stride; i++)
-          m_slice_buf[z + i * col_len] = m_data_buf[z * plane_size_xy + xy_offset + i];
+      // Extract up to 8 adjacent Z columns to slice buffer
+      for (size_t i = 0; i < stride; i++) {
+        for (size_t z = 0; z < col_len; z++) {
+          m_slice_buf[z + i * col_len] = data_3d[z, y, x + i];
+        }
       }
 
+      // Inverse transform each Z column
       for (size_t i = 0; i < stride; i++) {
         auto* itr = m_slice_buf.data() + i * col_len;
         this->QccWAVCDF97SynthesisSymmetric(itr, col_len);
@@ -459,9 +485,11 @@ void sperr::CDF97::m_idwt3d_one_level(std::array<size_t, 3> len_xyz)
         std::copy(m_aligned_buf, m_aligned_buf + col_len, itr);
       }
 
-      for (size_t z = 0; z < col_len; z++) {
-        for (size_t i = 0; i < stride; i++)
-          m_data_buf[z * plane_size_xy + xy_offset + i] = m_slice_buf[z + i * col_len];
+      // Put transformed Z columns back to volume
+      for (size_t i = 0; i < stride; i++) {
+        for (size_t z = 0; z < col_len; z++) {
+          data_3d[z, y, x + i] = m_slice_buf[z + i * col_len];
+        }
       }
     }
   }
@@ -567,12 +595,18 @@ auto sperr::CDF97::m_sub_slice(std::array<size_t, 2> subdims) const -> vecd_type
 {
   assert(subdims[0] <= m_dims[0] && subdims[1] <= m_dims[1]);
 
+  // Create 2D view of the data (treating first plane of 3D volume as 2D)
+  // Layout: y * m_dims[0] + x, so access is [y, x]
+  auto data_2d = std::mdspan(m_data_buf.data(), m_dims[1], m_dims[0]);
+
   auto ret = vecd_type(subdims[0] * subdims[1]);
-  auto dst = ret.begin();
+  auto dst_2d = std::mdspan(ret.data(), subdims[1], subdims[0]);
+
+  // Copy sub-region from source to destination
   for (size_t y = 0; y < subdims[1]; y++) {
-    auto beg = m_data_buf.begin() + y * m_dims[0];
-    std::copy(beg, beg + subdims[0], dst);
-    dst += subdims[0];
+    for (size_t x = 0; x < subdims[0]; x++) {
+      dst_2d[y, x] = data_2d[y, x];
+    }
   }
 
   return ret;
@@ -582,12 +616,17 @@ void sperr::CDF97::m_sub_volume(dims_type subdims, double* dst) const
 {
   assert(subdims[0] <= m_dims[0] && subdims[1] <= m_dims[1] && subdims[2] <= m_dims[2]);
 
-  const auto slice_len = m_dims[0] * m_dims[1];
+  // Create 3D views of source and destination
+  // Layout: z * (dims[0] * dims[1]) + y * dims[0] + x, so access is [z, y, x]
+  auto data_3d = std::mdspan(m_data_buf.data(), m_dims[2], m_dims[1], m_dims[0]);
+  auto dst_3d = std::mdspan(dst, subdims[2], subdims[1], subdims[0]);
+
+  // Copy sub-volume from source to destination
   for (size_t z = 0; z < subdims[2]; z++) {
     for (size_t y = 0; y < subdims[1]; y++) {
-      auto beg = m_data_buf.begin() + z * slice_len + y * m_dims[0];
-      std::copy(beg, beg + subdims[0], dst);
-      dst += subdims[0];
+      for (size_t x = 0; x < subdims[0]; x++) {
+        dst_3d[z, y, x] = data_3d[z, y, x];
+      }
     }
   }
 }
